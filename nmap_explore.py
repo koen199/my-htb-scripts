@@ -3,8 +3,6 @@ import os
 import json
 import xml.etree.ElementTree as ET
 
-
-
 with open('config.json') as fh:
     CONFIG = json.load(fh)
 

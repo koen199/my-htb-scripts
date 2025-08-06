@@ -1,3 +1,7 @@
 {
-    "TARGET_IP_ADDRESS":"10.129.215.99"
+    "TARGET_IP_ADDRESS":"10.129.215.99",
+    "GOBUSTER_ROOT_DIRECTORIES": ["/"], 
+    "GOBUSTER_PROTOCOL":"http",
+    "GOBUSTER_PORT": "80", 
+    "GOBUSTER_WORD_LIST": "/snap/seclists/current/Discovery/Web-Content/common.txt"
 }
