@@ -1,7 +1,8 @@
 {
-    "TARGET_IP_ADDRESS":"10.129.215.99",
-    "GOBUSTER_ROOT_DIRECTORIES": ["/"], 
+    "TARGET_IP_ADDRESS":"10.129.200.170",
+    "GOBUSTER_ROOT_DIRECTORIES": ["", "nibbleblog"], 
     "GOBUSTER_PROTOCOL":"http",
     "GOBUSTER_PORT": "80", 
-    "GOBUSTER_WORD_LIST": "/snap/seclists/current/Discovery/Web-Content/common.txt"
+    "GOBUSTER_WORD_LIST": "/snap/seclists/current/Discovery/Web-Content/common.txt" ,
+    "CEWL_RECURSIVE_DEPTH": "4" 
 }
