@@ -27,3 +27,15 @@ nmap -sC -p 22,80 -oA nibbles_script_scan 10.129.42.190.
 #On some service like http we can run specific scripts
 nmap -sV --script=http-enum -oA nibbles_nmap_http_enum 10.129.42.190 
 ```
+
+Do an aggresive scan 
+```
+-sC = Only runs default scripts.
+-A = Runs default scripts plus OS detection, version detection, and traceroute.
+sudo nmap 10.129.2.28 -p 80 -A
+```
+
+Scan for vulnerabilities
+```
+sudo nmap 10.129.2.28 -p 80 -sV --script vuln 
+```
