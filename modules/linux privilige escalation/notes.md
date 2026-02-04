@@ -193,6 +193,7 @@ htb_student@NIX02:~$ man tcpdump
 
 <SNIP> 
 -z postrotate-command              
+```
 
 Used in conjunction with the -C or -G options, this will make `tcpdump` run " postrotate-command file " where the file is the savefile being closed after each rotation. For example, specifying -z gzip or -z bzip2 will compress each savefile using gzip or bzip2.
 ```
